@@ -1,92 +1,89 @@
 import random
 from pathlib import Path
-from typing import List, Dict
 import json
 import logging
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
 class ResponseGenerator:
+    STYLE_EMOJIS = {
+        "luxury": "💎 Люкс",
+        "standard": "🏠 Стандарт",
+        "budget": "💰 Бюджетный вариант"
+    }
+    
     def __init__(self):
-        self.styles = {
-            "luxury": "💎 Премиум предложение",
-            "standard": "🏡 Хороший вариант",
-            "budget": "💰 Экономичный выбор"
-        }
         self.apartments = []
         self._load_apartments()
+        logger.info(f"ResponseGenerator loaded {len(self.apartments)} apartments")
 
     def _load_apartments(self):
-        try:
-            apartments_path = Path(__file__).parent.parent / "data" / "apartments.json"
-            with open(apartments_path, 'r', encoding='utf-8') as f:
-                self.apartments = json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading apartments: {e}")
-            self.apartments = []
+        apt_path = Path(__file__).parent.parent / "data" / "apartments.json"
+        if apt_path.exists():
+            try:
+                with open(apt_path, 'r', encoding='utf-8') as f:
+                    self.apartments = json.load(f)
+                    logger.info(f"🏢 Loaded {len(self.apartments)} apartments")
+            except Exception as e:
+                logger.error(f"🚨 Apartment loading error: {str(e)}")
+        else:
+            logger.warning("Apartments file not found")
 
-    def _format_apartment(self, apt: Dict) -> str:
-        style = self.styles.get(apt.get("style", "standard"))
-        features = "\n".join(f"• {f}" for f in apt["features"])
-
+    def _format_apartment(self, apt: dict) -> str:
+        style = self.STYLE_EMOJIS.get(apt.get("style", "standard"))
+        features = "\n".join(f"• {feat}" for feat in apt.get("features", []))
+        
         return (
             f"{style}\n"
-            f"🏢 {apt['address']}\n"
-            f"📐 {apt['area']} м² | {apt['rooms']} комнаты\n"
-            f"🏷️ {apt['price']:,} руб.\n"
-            f"\n✨ Особенности:\n{features}\n"
-            f"\n📌 {apt['description']}\n"
-            f"\n☎ Контакт: {apt.get('contact', '+7 (XXX) XXX-XX-XX')}"
+            f"📍 {apt['address']}\n"
+            f"📏 {apt['area']} м² | 🛏️ {apt['rooms']} комнаты\n"
+            f"💵 {apt['price']:,} руб.{' в месяц' if apt.get('rental', False) else ''}\n\n"
+            f"🔮 Особенности:\n{features}\n\n"
+            f"📝 {apt['description']}\n\n"
+            f"👤 {apt.get('contact', 'Контакты отсутствуют')}"
         )
 
-    def generate_response(self, intent: str) -> List[str]:
-        """Генерирует ответы ТОЛЬКО для обычного режима"""
-        if intent == "ai_question":
-            return []  # В AI-режиме этот метод не используется
-        if intent == "dialogue_answer": # Ответ уже сформирован в intent_classifier
-            return []
+    def get_random_apartment(self) -> Optional[str]:
+        if not self.apartments:
+            return None
+        apt = random.choice(self.apartments)
+        return self._format_apartment(apt)
 
+    def generate(self, intent: str) -> List[str]:
         responses = []
         
         if intent == "greeting":
             responses.append(random.choice([
-                "Привет! Я ваш гид по недвижимости.",
-                "Здравствуйте! Готов помочь с поиском жилья.",
-                "Приветствую!"
+                "Привет! Я ваш ассистент по недвижимости. Чем могу помочь? 😊",
+                "Здравствуйте! Помогу подобрать идеальное жильё для вас. 🏠",
+                "Приветствую! Готов предложить вам лучшие варианты жилья! 🌆"
             ]))
+            
         elif intent == "self_info":
-            responses.append(random.choice([
-                "Я бот-консультант по недвижимости. Могу помочь подобрать квартиру!",
-                "Ваш виртуальный помощник по аренде и покупке жилья!",
-                "Я специализируюсь на подборе недвижимости!"
-            ]))
+            responses.append("Я бот-консультант по недвижимости. Специализируюсь на подборе квартир и ответах на все вопросы по этой теме! 🏡")
+            
         elif intent == "mood":
             responses.append(random.choice([
-                "Всё отлично! Готов вам помочь.",
-                "Работаю в штатном режиме! Ищу лучшие варианты для вас.",
-                "Как в сказке! Чем могу помочь?",
-                "Прекрасно!"
+                "Отлично, готов работать! 😊",
+                "У меня всё чудесно, как у бота! 🤖",
+                "В прекрасном настроении, помогу по любым вопросам жилья. 💪"
             ]))
+            
         elif intent == "goodbye":
-            responses.append(random.choice([
-                "До свидания! Возвращайтесь за новыми предложениями!",
-                "Хорошего дня! Если нужна будет недвижимость — обращайтесь.",
-                "Всего доброго!",
-            ]))
+            responses.append("Отличного дня! Возвращайтесь, когда понадобится недвижимость. 👋")
+            
         elif intent == "apartment":
-            responses.append(random.choice([
-                "Вот несколько вариантов квартир:",
-                "Подобрал для вас лучшие актуальные предложения:",
-                "Актуальные варианты жилья для вас:"
-            ]))
-            if self.apartments:
-                for apt in random.sample(self.apartments, min(3, len(self.apartments))):
-                    responses.append(self._format_apartment(apt))
-        else:
-            responses.append(random.choice([
-                "Не понял вашего вопроса. Можете уточнить?",
-                "Извините, я не совсем понял. Переформулируйте, пожалуйста.",
-                "Кажется, я не распознал ваш запрос. Попробуйте сказать иначе."
-            ]))
-
-        return responses if intent in ["apartment", "unknown"] else responses[:1]
+            if not self.apartments:
+                responses.append("⛔ К сожалению, у меня нет доступных предложений сейчас.")
+                return responses
+                
+            responses.append("🏙️ Вот актуальные варианты:")
+            # Берем максимум 3 случайных квартиры
+            for apt in random.sample(self.apartments, min(3, len(self.apartments))):
+                responses.append(self._format_apartment(apt))
+                
+        else:  # unknown intent
+            return []  # Пустой ответ отправится в AI-обработчик
+            
+        return responses

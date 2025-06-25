@@ -1,56 +1,92 @@
+import os
+import threading
+from pathlib import Path
 from llama_cpp import Llama
 import logging
-from typing import Optional
-import os
 from config.settings import AI_ENABLED
 
 logger = logging.getLogger(__name__)
 
 class AIService:
+    _lock = threading.Lock()
+    
     def __init__(self):
         self.llm = None
-        if AI_ENABLED:
-            self._load_model()
+        self.model_loaded = False
 
     def _load_model(self):
-        try:
-            model_path = "models/Meta-Llama-3-8B-Q8_0.gguf"
-            if os.path.exists(model_path):
-                logger.info("🔄 Loading AI model...")
+        with self._lock:
+            if self.llm or self.model_loaded:
+                return
+                
+            try:
+                if not AI_ENABLED:
+                    logger.info("AI отключен в настройках")
+                    return
+                
+                model_path = "models/saiga_llama3_8b_ggml-model-q8_0.gguf"
+                if not Path(model_path).exists():
+                    logger.error("Файл модели не найден")
+                    return
+
+                logger.info("Загрузка AI модели...")
                 self.llm = Llama(
                     model_path=model_path,
-                    n_ctx=2048,
-                    n_threads=4,
+                    n_ctx=4096,
+                    n_threads=8,
+                    chat_format="llama-3",
+                    n_gpu_layers=50,
                     verbose=False
                 )
-                logger.info("✅ AI model loaded successfully!")
-            else:
-                logger.warning("Model file not found, AI will be disabled")
-        except Exception as e:
-            logger.error(f"❌ Model loading error: {e}")
+                self.model_loaded = True
+                logger.info("Модель успешно загружена!")
+            except Exception as e:
+                logger.error(f"Ошибка загрузки модели: {str(e)}", exc_info=True)
 
-    def generate_response(self, prompt: str) -> Optional[str]:
+    def generate_response(self, prompt: str) -> str:
+        if not AI_ENABLED or not prompt.strip():
+            return ""
+            
+        if not self.model_loaded:
+            self._load_model()
+            
         if not self.llm:
-            return None
-
+            return ""
+            
         try:
             system_prompt = (
-                "Ты профессиональный консультант по недвижимости. "
-                "Отвечай четко и по делу (1-3 предложения). "
-                "Если вопрос не о недвижимости, вежливо перенаправь на тему."
+                "Ты Квартирка — профессиональный, дружелюбный консультант по недвижимости.\n"
+                "ПРАВИЛА:\n"
+                "1. Отвечай кратко (1-2 предложения)\n"
+                "2. Используй эмодзи для выразительности 😊\n"
+                "3. Задавай вопросы о предпочтениях клиента\n"
+                "4. Каждые 3-5 реплик предлагай квартиры\n"
+                "5. Начинай каждое предложение с большой буквы\n\n"
+                "Пример диалога:\n"
+                "User: Привет\n"
+                "You: Привет! 😊 Готов помочь найти идеальное жильё! Что интересует?"
             )
-            full_prompt = f"{system_prompt}\nВопрос: {prompt}\nОтвет:"
 
-            response = self.llm(
-                full_prompt,  # Используем исправленную переменную
-                max_tokens=150,
-                temperature=0.6,
-                stop=["\n", "Вопрос:", "Ответ:"],
-                echo=False
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = self.llm.create_chat_completion(
+                messages=messages,
+                max_tokens=384,
+                temperature=0.7,
+                top_p=0.9,
+                stop=["<|end_of_text|>"]
             )
-            return response['choices'][0]['text'].strip()
+            
+            content = response['choices'][0]['message']['content'].strip()
+            
+            # Гарантируем первую заглавную букву
+            if content and content[0].islower():
+                content = content[0].upper() + content[1:]
+                
+            return content
         except Exception as e:
-            logger.error(f"Generation error: {e}")
-            return None
-
-ai_service = AIService()
+            logger.error(f"Ошибка генерации: {str(e)}", exc_info=True)
+            return ""

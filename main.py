@@ -1,38 +1,40 @@
 import logging
-from telegram.ext import Application, MessageHandler, CommandHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from config.settings import TELEGRAM_TOKEN
-from config.logger import setup_logging
-from handlers.voice import handle_voice_message
-from handlers.text import (
-    start,
-    toggle_ai_mode,
-    toggle_voice_mode,
-    search_apartments,
-    handle_text_message
+from handlers.text_handler import start, toggle_ai_mode, toggle_voice_mode, search_apartments, handle_text
+from handlers.voice_handler import handle_voice
+from pathlib import Path
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
-def main():
-    setup_logging()
-    logging.info("Starting bot...")
-
+def main() -> None:
+    logger.info("Starting bot initialization...")
+    
+    # Создаем папки для временных файлов
+    Path("temp/voices").mkdir(parents=True, exist_ok=True)
+    Path("temp/audio").mkdir(parents=True, exist_ok=True)
+    Path("temp/downloads").mkdir(parents=True, exist_ok=True)
+    
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Явная регистрация всех обработчиков с логгированием
-    handlers = [
-        CommandHandler("start", start),
-        CommandHandler("ai_mode", toggle_ai_mode),
-        CommandHandler("voice_mode", toggle_voice_mode),
-        CommandHandler("search", search_apartments),
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message),
-        MessageHandler(filters.VOICE, handle_voice_message)
-    ]
+    # Регистрируем обработчики команд
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("ai_mode", toggle_ai_mode))
+    application.add_handler(CommandHandler("voice_mode", toggle_voice_mode))
+    application.add_handler(CommandHandler("search", search_apartments))
     
-    for handler in handlers:
-        application.add_handler(handler)
-        logging.info(f"Registered handler: {type(handler).__name__}")
+    # Регистрируем обработчики сообщений
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice))
     
-    logging.info("All handlers registered successfully")
+    logger.info("All handlers registered. Starting polling...")
     application.run_polling()
 
 if __name__ == "__main__":
     main()
+
